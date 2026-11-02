@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CTX Key Panel</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0c12;--panel:#141622;--line:#292d40;--muted:#9ba1b5;--accent:#9b7bff;--good:#45d6a0;--bad:#ff6b83}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#21183d 0,transparent 35%),var(--bg);color:#f4f3fb;font:15px system-ui,Arial}
+main{max-width:1050px;margin:40px auto;padding:0 18px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:24px}
+h1{font-size:25px;margin:0}.sub{color:var(--muted);margin-top:5px}.card{background:#141622eF;border:1px solid var(--line);border-radius:16px;padding:20px;margin:14px 0}
+input,button{font:inherit;border-radius:10px;padding:12px;border:1px solid var(--line)}input{background:#0e1019;color:white;width:100%}
+button{background:var(--accent);color:#100c1b;border:0;font-weight:700;cursor:pointer}button.secondary{background:#25283a;color:white}button.danger{background:#4b2330;color:#ffdce3}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}.hidden{display:none!important}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.stat{background:#0e1019;border:1px solid var(--line);border-radius:12px;padding:14px}.stat b{font-size:24px;display:block}
+table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--muted)}
+.pill{padding:4px 8px;border-radius:20px;background:#19382f;color:var(--good)}.off{background:#482532;color:#ff9cad}
+#message{color:var(--muted);min-height:22px;margin-top:10px}.key{font-family:monospace;letter-spacing:.3px}
+@media(max-width:650px){.stats{grid-template-columns:1fr 1fr}table{display:block;overflow:auto}.top{align-items:flex-start}}
+</style></head>
+<body><main>
+<header class="top"><div><h1>CTX KEY SYSTEM</h1><div class="sub">Admin dashboard · License verification API</div></div><button id="logout" class="secondary hidden">Logout</button></header>
+<section id="login" class="card"><h2>Admin Login</h2><p class="sub">Enter your admin password to manage license keys.</p><div class="row"><input id="password" type="password" placeholder="Admin password"><button id="loginBtn">Sign in</button></div></section>
+<section id="dashboard" class="hidden">
+<div class="stats">
+<div class="stat"><span class="sub">Total keys</span><b id="total">0</b></div>
+<div class="stat"><span class="sub">Active keys</span><b id="active">0</b></div>
+<div class="stat"><span class="sub">Bound devices</span><b id="devices">0</b></div>
+</div>
+<div class="card"><h2>Create keys</h2><div class="row">
+<label>Number of keys<input id="count" type="number" min="1" max="100" value="1"></label>
+<label>Devices per key<input id="maxDevices" type="number" min="1" max="20" value="1"></label>
+<label>Validity days<input id="days" type="number" min="0" max="3650" value="0"><small class="sub">0 = no expiry</small></label>
+</div><p><button id="createBtn">Generate keys</button></p><div id="created" class="key"></div></div>
+<div class="card"><div class="top"><div><h2>Manage keys</h2><div class="sub">Activate, disable or delete license keys.</div></div><button id="refresh" class="secondary">Refresh</button></div>
+<div style="overflow:auto"><table><thead><tr><th>KEY</th><th>STATUS</th><th>DEVICES</th><th>EXPIRES</th><th>ACTIONS</th></tr></thead><tbody id="keys"></tbody></table></div></div>
+<div class="card"><h2>Verification API</h2><p class="sub">Use this endpoint in your APK:</p><code id="endpoint"></code><p class="sub">Method: POST · Content-Type: application/json</p><pre>{"key":"YOUR-KEY","device":"ANDROID_ID"}</pre></div>
+</section><div id="message"></div></main>
+<script>
+const $=id=>document.getElementById(id);
+const say=t=>$("message").textContent=t;
+async function api(url,opts={}){const r=await fetch(url,{credentials:"same-origin",headers:{"Content-Type":"application/json"},...opts});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.msg||"Request failed");return d}
+function show(yes){$("login").classList.toggle("hidden",yes);$("dashboard").classList.toggle("hidden",!yes);$("logout").classList.toggle("hidden",!yes)}
+async function load(){try{const d=await api("/api/admin/keys");const rows=d.keys||[];$("total").textContent=rows.length;$("active").textContent=rows.filter(x=>x.is_active).length;$("devices").textContent=rows.reduce((n,x)=>n+(x.license_devices||[]).length,0);$("keys").innerHTML=rows.map(x=>{const n=(x.license_devices||[]).length;const expiry=x.expires_at?new Date(x.expires_at).toLocaleDateString():"Never";return `<tr><td class="key">${esc(x.license_key)}</td><td><span class="pill ${x.is_active?"":"off"}">${x.is_active?"Active":"Disabled"}</span></td><td>${n}/${x.max_devices}</td><td>${expiry}</td><td><button class="secondary" data-action="toggle" data-key="${esc(x.license_key)}" data-active="${!x.is_active}">${x.is_active?"Disable":"Enable"}</button> <button class="danger" data-action="delete" data-key="${esc(x.license_key)}">Delete</button></td></tr>`}).join("");$("endpoint").textContent=location.origin+"/api/verify";}catch(e){say(e.message);if(e.message==="Please sign in")show(false)}}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+$("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({password:$("password").value})});show(true);say("Signed in");load()}catch(e){say(e.message)}};
+$("password").addEventListener("keydown",e=>{if(e.key==="Enter")$("loginBtn").click()});
+$("logout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});show(false);say("Logged out")};
+$("createBtn").onclick=async()=>{try{const d=await api("/api/admin/keys",{method:"POST",body:JSON.stringify({count:$("count").value,max_devices:$("maxDevices").value,days:$("days").value})});$("created").textContent=d.keys.join("\\n");say("Keys created");load()}catch(e){say(e.message)}};
+$("refresh").onclick=load;
+$("keys").onclick=async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="delete"&&!confirm("Delete this key permanently?"))return;if(b.dataset.action==="toggle")await api("/api/admin/key?key="+encodeURIComponent(b.dataset.key),{method:"PATCH",body:JSON.stringify({is_active:b.dataset.active==="true"})});else await api("/api/admin/key?key="+encodeURIComponent(b.dataset.key),{method:"DELETE"});say("Updated");load()}catch(err){say(err.message)}};
+(async()=>{try{await load();show(true)}catch{show(false)}})();
+</script></body></html>
